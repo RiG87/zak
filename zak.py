@@ -340,7 +340,7 @@ class Account:
 
 class ZimbraManager:
     """
-    Works with zimbra-mysql and zimbra-cli
+    Works with zimbra mysql
     """
 
     accounts = []
