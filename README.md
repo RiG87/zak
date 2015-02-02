@@ -16,8 +16,10 @@ will remove attachments older then 180 days in account@my.dom
 
 
 `[zimbra_user@mail_store]$ cat list`
+
 account1@my.dom
 account2@my.dom
+
 `[zimbra_user@mail_store]$ ./zak.py -a list -t 180`
 will remove attachments older then 180 days
 in account1@my.dom and in account2@my.dom
