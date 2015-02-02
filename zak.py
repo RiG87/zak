@@ -3,7 +3,7 @@
 #
 #
 # Zimbra Attachments Killer
-# Copyright (C) 2015  pysarenko.a
+# Copyright (C) 2015  RiG87
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,7 +21,7 @@
 
 __program__ = 'Zimbra Attachments Killer'
 __version__ = '1.0'
-__author__ = 'pysarenko.a'
+__author__ = 'RiG87'
 
 """
 Automation script. Removes attachments from zimbra.
