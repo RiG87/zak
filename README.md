@@ -10,21 +10,23 @@
 Removes attachments from zimbra email messages <br>
 Usages: <br>
 
-1. <br>
+
+* 
 `[zimbra_user@mail_store]$ ./zak.py -a account@my.dom -t 180` <br>
 
 will remove attachments older then 180 days in account@my.dom <br>
 
-2. <br>
+
+* 
 `[zimbra_user@mail_store]$ cat list` <br>
-account1@my.dom <br>
-account2@my.dom <br>
+`account1@my.dom` <br>
+`account2@my.dom` <br>
 `[zimbra_user@mail_store]$ ./zak.py -a list -t 180` <br>
 
 will remove attachments older then 180 days <br>
 in account1@my.dom and in account2@my.dom <br>
 
-3. <br>
+* 
 `[zimbra_user@mail_store]$ ./zak.py -a all -t 180` <br>
 will remove attachments older then 180 days in all accounts <br>
 
