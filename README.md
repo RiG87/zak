@@ -54,15 +54,18 @@ will remove attachments older then 180 days in all accounts <br>
 `PS> .\meak.ps1 ­AllDatabases ­AllAccounts ­TimeToLive 90 ­LogDir “D:\logs” ­Limit 100`
 
 Як видно, для запуску потрібно визначити ряд параметрів:
-
 <br>
-* ­AllDatabases (flag) ­ Визначення бази даних. всі доступні бази даних
+Визначення бази даних (обов’язково).
+<br>
+* ­AllDatabases (flag) ­  всі доступні бази даних
 <br>
 * ­Databases (list) ­ Визначення бази даних. одне, або декілька імен баз даних
 <br>
+
 Визначення списку акаунтів (обов’язково). Для визначення списку цільових акаунтів,
 передбачено три взаємо виключаючі параметри (в порядку пріоритетності): 
 <br>
+
 * ­AllAccounts (flag) ­ всі доступні акаунти
 <br>
 * ­AccountsFile (file path) ­ шлях до файлу із списком акаунтів
