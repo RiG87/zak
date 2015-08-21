@@ -1,52 +1,42 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-#
 # Zimbra Attachments Killer
-# Copyright (C) 2015  RiG87
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+# Automation script. Removes attachments from zimbra.
 #
 
 __program__ = 'Zimbra Attachments Killer'
-__version__ = '1.0'
-__author__ = 'RiG87'
+__version__ = '1.2'
+__author__ = 'pysarenko.a'
 
-"""
-Automation script. Removes attachments from zimbra.
-"""
-
-
-import argparse
-import sys
-import subprocess
 import os
-import getpass
+import sys
 import logging
 import MySQLdb
-import datetime
-import time
-import email
-import textwrap
+import subprocess
 
-from email.utils import getaddresses
+from datetime import datetime
+from datetime import timedelta
+
+from time import strftime
+from time import mktime
+
+from email import message_from_file
+from email.utils import parsedate
+from email.mime.text import MIMEText
 from email.generator import Generator
+
+from argparse import ArgumentParser
+from argparse import RawDescriptionHelpFormatter
+
 from errno import EEXIST
+from getpass import getuser
 from contextlib import closing
-from ConfigParser import ConfigParser
+
+from textwrap import dedent
 from StringIO import StringIO
 
+from ConfigParser import ConfigParser
 
 # <editor-fold desc="Constants">
 ###############################################################################
@@ -62,9 +52,10 @@ _tmp_block = 'main'             # tmp config block need for ConfigParser()
 _def_start = -1                 # default sql start
 _def_limit = -1                 # default sql limit
 _def_ttl_days = 360             # default files time to live in days
-_def_all_accounts_flag = 'all'  # default flag 'use full accounts list for processing'
+_def_all_accounts_flag = '*'    # default flag 'use full accounts list for processing'
 _def_accounts = ''              # default accounts val
 _def_log_dir = 'logs'           # default log-file name
+_def_child = str(-1)            # default child counter
 
 _zcp_home = 'zimbra_home'               # zimbra config param 'zimbra_home'
 _zcp_user = 'zimbra_user'               # zimbra config param 'zimbra_user'
@@ -88,24 +79,6 @@ class Utils:
 
     log = None
     log_format = u'[%(levelname)-5s] [%(asctime)s] [line:%(lineno)-3s] %(message)s'
-
-    @staticmethod
-    def get_mail_header(header_text, default="ascii"):
-        """Decode header_text if needed"""
-        try:
-            headers = email.Header.decode_header(header_text)
-        except email.Errors.HeaderParseError:
-            # This already append in email.base64mime.decode()
-            # instead return a sanitized ascii string
-            return header_text.encode('ascii', 'replace').decode('ascii')
-        else:
-            for i, (text, charset) in enumerate(headers):
-                try:
-                    headers[i] = unicode(text, charset or default, errors='replace')
-                except LookupError:
-                    # if the charset is unknown, force default
-                    headers[i] = unicode(text, default, errors='replace')
-            return u"".join(headers)
 
     @staticmethod
     def ensure_dir(full_name):
@@ -221,82 +194,48 @@ class Account:
         :return: log messages
         """
         for path in self.message_paths:
-            log.debug('Next message: ' + path)
-
             if not os.path.isfile(path):
-                log.debug("continue: file not exists")
+                log.debug("continue: message file not exists")
                 continue
 
             # https://docs.python.org/3/library/email-examples.html
             with open(path) as fp:
-                msg = email.message_from_file(fp)
+                msg = message_from_file(fp)
 
-                _date = email.utils.parsedate(msg['Date'])
+                _date = parsedate(msg['Date'])
                 if not _date:
-                    log.debug('continue: message date not exists')
+                    log.debug('continue: message date header not exists')
                     continue
 
-                _str_date = time.strftime("%d.%m.%Y %H:%M:%S", _date)
-                _trg_date = datetime.datetime.now() - datetime.timedelta(days=(ttl + 1))
+                _str_date = strftime("%d.%m.%Y %H:%M:%S", _date)
+                _trg_date = datetime.now() - timedelta(days=(ttl + 1))
 
-                if datetime.datetime.fromtimestamp(time.mktime(_date)) >= _trg_date:
+                if datetime.fromtimestamp(mktime(_date)) >= _trg_date:
                     log.debug('continue: too new ' + _str_date)
                     continue
 
-                _recipients = []
-                _r_list = getaddresses(msg.get_all('From', []) + msg.get_all('To', []))
-
-                for (description, address) in _r_list:
-                    _recipients.append(address)
-
-                _recipients = Utils.array_to_string(src_list=_recipients, quoted=False)
-
-                payloads = msg.get_payload()
+                log.info('Message: ' + path)
                 need_rewrite = False
+                for part in msg.walk():
+                    _content_maintype = part.get_content_maintype()
+                    _content_type = part.get_content_type()
 
-                for (index, part) in reversed(list(enumerate(payloads))):
-                    if index == 0:
-                        log.debug('continue: first container')
+                    if _content_maintype == 'multipart' \
+                            or _content_maintype == 'message' \
+                            or _content_type == 'text/html' \
+                            or _content_type == 'text/plain':
+                        log.debug('Not Deleted. %s' % str(_content_type))
                         continue
-
-                    if hasattr(part, 'get_filename'):
-                        _filename = part.get_param('filename', None, 'Content-Disposition')
-
-                        if not _filename:
-                            _filename = part.get_param('name', None)  # default is 'Content-Type'
-
-                        if _filename and isinstance(_filename, str):
-                            # But a lot of MUA erroneously use RFC 2047 instead of RFC 2231
-                            # in fact anybody miss use RFC2047 here !!!
-                            _filename = Utils.get_mail_header(_filename)
                     else:
-                        log.debug('continue: no get_filename attr in part')
-                        continue
+                        """
+                        Delete attachment from message
+                        Last chance for save file to disk.
+                        """
 
-                    if not _filename:
-                        log.debug('continue: not filename')
-                        continue
-
-                    if _filename == 'winmail.dat':
-                        log.debug('continue: winmail.dat')
-                        continue
-
-                    log.info("Attachment was Deleted. Message Date: %s, Size: %s, FileName: %s, Recipients: %s "
-                             % (_str_date, len(part.get_payload()), _filename, _recipients))
-
-                    """
-                    Last chance for save file to disk
-
-                    Some like:
-                    #  with open(os.path.join(_target_directory, _filename), 'wb') as fp:
-                    #    fp.write(part.get_payload(decode=True))
-                    """
-
-                    """
-                    delete attachment from message
-                    """
-                    del payloads[index]
-                    need_rewrite = True
+                        log.info("Deleted. MsgDate: %s, Size: %s" % (_str_date, len(part.get_payload())))
+                        part.set_payload('')
+                        need_rewrite = True
+                    pass
                 pass
             pass
 
@@ -313,6 +252,8 @@ class Account:
                     log.debug("continue: debug mode")
                 else:
                     log.debug("continue: attachments not found")
+                pass
+            pass
         pass
 
     def init_message_paths(self, connection, log):
@@ -320,11 +261,7 @@ class Account:
 
         with closing(connection.cursor()) as cursor:
             cursor.execute(self.file_query)
-
-            log.info(
-                "init_message_paths: self_pid %s rowcount %s query %s"
-                % (os.getpid(), str(cursor.rowcount), self.file_query))
-
+            log.info("init_message_paths: rowcount %s query %s" % (str(cursor.rowcount), self.file_query))
             for row in cursor.fetchall():
                 self.message_paths.append(row[0])
         pass
@@ -388,7 +325,7 @@ class ZimbraManager:
 
     def _check_user(self):
         user = self.config.get(_tmp_block, _zcp_user)
-        if getpass.getuser() != user:
+        if getuser() != user:
             print
             print "ERROR. You MUST HAVE the rights of user '" + user
             print "' Please, do 'su " + user + "' and try again."
@@ -399,14 +336,14 @@ class ZimbraManager:
             cursor.execute(self.base_query)
 
             self.log.info(
-                "process: self_pid %s rowcount %s query %s"
-                % (os.getpid(), str(cursor.rowcount), self.base_query))
+                "process: %s rowcount %s query %s"
+                % (self._child, str(cursor.rowcount), self.base_query))
 
             for row in cursor.fetchall():
                 acc = Account(row[0], row[1], row[2])
                 self.log.info(
-                    "Account: self_pid %s start work with %s id %s group_id %s"
-                    % (os.getpid(), acc.email, acc.id, acc.group_id))
+                    "Account: start work with %s id %s group_id %s"
+                    % (acc.email, acc.id, acc.group_id))
 
                 acc.init_message_paths(self.connection, self.log)
                 acc.delete_attachments(self._ttl, self.log, debug=self._debug)
@@ -419,6 +356,7 @@ class ZimbraManager:
         _start = self._start
         _limit = self._limit
         _count = 0
+        _child = 0
 
         with closing(self.connection.cursor()) as cursor:
             cursor.execute(self.count_query)
@@ -432,13 +370,14 @@ class ZimbraManager:
             self.log.info("accounts count %s" % _count)
 
             while _count > 0:
+                _child += 1
                 _cmd = [
                     __file__,
-                    "--child=" + str(1),
-                    "-s" + str(_start),
-                    "-l" + str(_limit),
-                    "-t" + str(self._arguments.TIME_TO_LIVE),
-                    "-d" + str(self._log_dir)
+                    "--child=" + str(_child),
+                    "--start=" + str(_start),
+                    "--limit=" + str(_limit),
+                    "--time-to-live=" + str(self._arguments.TIME_TO_LIVE),
+                    "--log-dir=" + str(self._log_dir)
                 ]
 
                 if self._debug:
@@ -447,8 +386,8 @@ class ZimbraManager:
                 _process = subprocess.Popen(_cmd)
 
                 self.log.info(
-                    "run_self: self_pid %s child_pid %s start %s limit %s count %s cmd %s"
-                    % (os.getpid(), _process.pid, _start, _limit, _count, Utils.array_to_string(src_list=_cmd)))
+                    "run_self: child: %s child_pid %s start %s limit %s count %s cmd %s"
+                    % (_child, _process.pid, _start, _limit, _count, Utils.array_to_string(src_list=_cmd)))
 
                 _start += _limit
                 _count -= _limit
@@ -483,16 +422,24 @@ class ZimbraManager:
                 """
                 it's single e-mail address
                 """
-                self.base_query = self.base_query + " WHERE comment LIKE '" + self._accounts + "%';"
+                self.base_query += " WHERE comment LIKE '"
+
+                if self._accounts.endswith(_def_all_accounts_flag):
+                    """use search mask"""
+                    self.base_query += self._accounts[:-1] + "%';"
+                else:
+                    self.base_query += self._accounts + "';"
+                pass
+
             self.process()
 
-        elif self._accounts == 'all':
+        elif self._accounts == _def_all_accounts_flag:
             """
             must run self COUNT/LIMIT times
             """
             self.run_self()
 
-        elif self._start != _def_start and self._limit != _def_limit:
+        elif self._child != _def_child:
             """
             start and limit changed
             this was run automatically
@@ -508,8 +455,6 @@ class ZimbraManager:
         self._limit = arguments.LIMIT
         self._ttl = arguments.TIME_TO_LIVE
 
-        self._debug = arguments.DEBUG == 1
-
         self._init_config_parser()
         self._check_user()
 
@@ -519,12 +464,14 @@ class ZimbraManager:
             self._log_dir = os.path.abspath(arguments.LOG_DIR)
             Utils.ensure_dir(self._log_dir)
 
-        _self_file = os.path.basename(__file__)
-        if arguments.CHILD != 1:
-            self._log_file = "%s/%s.log" % (self._log_dir, _self_file)
+        if str(arguments.CHILD) == _def_child:
+            self._child = str(0)
         else:
-            self._log_file = "%s/%s_pid_%s.log" % (self._log_dir, _self_file, os.getpid())
+            self._child = str(arguments.CHILD)
+            pass
+        self._log_file = "%s/%s_%s.log" % (self._log_dir, os.path.basename(__file__), self._child)
 
+        self._debug = (arguments.DEBUG == 1)
         self.log = Utils.get_logger(self._log_file, debug=self._debug)
 
         self.connection = self._get_mysql_conn()
@@ -537,16 +484,13 @@ class ZimbraManager:
 # <editor-fold desc="Arguments">
 ###############################################################################
 
-parser = argparse.ArgumentParser(
+parser = ArgumentParser(
     prog=__program__,
-    formatter_class=argparse.RawDescriptionHelpFormatter,
-    description=textwrap.dedent("""
+    formatter_class=RawDescriptionHelpFormatter,
+    description=dedent("""
     Removes attachments from zimbra email messages
 
     Usages:
-
-    -------------------------
-    1
 
     [zimbra_user@mail_store]$ ./zak.py -a account@my.dom -t 180
 
@@ -554,7 +498,6 @@ parser = argparse.ArgumentParser(
 
 
     -------------------------
-    2
 
     [zimbra_user@mail_store]$ cat list
     account1@my.dom
@@ -565,9 +508,7 @@ parser = argparse.ArgumentParser(
         will remove attachments older then 180 days
         in account1@my.dom and in account2@my.dom
 
-
     -------------------------
-    3
 
     [zimbra_user@mail_store]$ ./zak.py -a all -t 180
 
@@ -576,22 +517,24 @@ parser = argparse.ArgumentParser(
     -------------------------
     """))
 parser.add_argument(
-    "-a", dest="ACCOUNTS", type=str, default=_def_accounts,
-    help="list zimbra-accounts for processing. default: empty")
+    "-a", "--accounts", dest="ACCOUNTS", type=str, default=_def_accounts,
+    help="list zimbra-accounts for processing. default: empty. All Accounts: '"+_def_all_accounts_flag+"'")
 parser.add_argument(
-    "-t", dest="TIME_TO_LIVE", type=int, default=_def_ttl_days,
+    "-t", "--time-to-live", dest="TIME_TO_LIVE", type=int, default=_def_ttl_days,
     help="attachments time to live in days. default: " + str(_def_ttl_days))
 parser.add_argument(
-    "-s", dest="START", type=int, default=_def_start,
+    "-s", "--start", dest="START", type=int, default=_def_start,
     help="account list Start position for processing. default: " + str(_def_start))
 parser.add_argument(
-    "-l", dest="LIMIT", type=int, default=_def_limit,
+    "-l", "--limit", dest="LIMIT", type=int, default=_def_limit,
     help="limit of accounts portion for processing. default: " + str(_def_limit))
 parser.add_argument(
-    "-d", dest="LOG_DIR", type=str, default=_def_log_dir,
+    "-d", "--log-dir", dest="LOG_DIR", type=str, default=_def_log_dir,
     help="directory for log files. default: " + _def_log_dir)
+parser.add_argument(
+    "-c", "--child", dest="CHILD", type=str, default=_def_child,
+    help="Child counter. Private argument.")
 parser.add_argument("--debug", dest="DEBUG", type=int, default=0, help="is debug mode.")
-parser.add_argument("--child", dest="CHILD", type=int, default=0, help="is child process. Private flag.")
 parser.add_argument("-v", "--version", action="version", version="%(prog)s " + __version__)
 #  "-h", "--help" auto generated parameter
 
@@ -602,5 +545,5 @@ args = parser.parse_args()
 
 zm = ZimbraManager(args)
 Utils.log = zm.log
-Utils.log.info("pid %s successful end of work" % str(os.getpid()))
+Utils.log.info("Successful end of work")
 sys.exit(0)

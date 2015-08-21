@@ -1,4 +1,5 @@
-# Zimbra Attachments Killer
+# Zimbra Attachments Killer (zak.py) 
+# Microsoft Exchange Attachments Killer (meak.ps1)
 
 `[zimbra_user@zimbra_mail_store]$ ./zak -h` <br>
 
@@ -39,3 +40,34 @@ will remove attachments older then 180 days in all accounts <br>
 `--debug DEBUG    is debug mode` <br>
 `--child CHILD    is child process. Private flag` <br>
 `-v, --version    show program's version number and exit` <br>
+
+
+
+Для видалення вкладень з MS Exchange 2013 реалізовано powershell­script
+`meak.ps1`. Для передачі параметрів запуску у скрипт, адміністратор повинен
+використовувати powershell­синтаксис.
+
+Приклад 1. Команда для видалення всіх файлів у скрині username:
+`PS> .\meak.ps1 ­AllDatabases ­Account “username@my.dom” ­TimeToLive 0`
+
+Приклад 2. Типова команда для запуску:
+`PS> .\meak.ps1 ­AllDatabases ­AllAccounts ­TimeToLive 90 ­LogDir “D:\logs” ­Limit 100`
+
+Як видно, для запуску потрібно визначити ряд параметрів:
+1. Визначення бази даних (обов’язково). Для визначення цільової бази даних,
+передбачено два взаємо виключаючі параметри (в порядку пріоритеності): <br>
+* ­AllDatabases (flag) ­ всі доступні бази даних
+* ­Databases (list) ­ одне, або декілька імен баз даних
+2. Визначення списку акаунтів (обов’язково). Для визначення списку цільових акаунтів,
+передбачено три взаємо виключаючі параметри (в порядку пріоритетності): <br>
+* ­AllAccounts (flag) ­ всі доступні акаунти
+* ­AccountsFile (file path) ­ шлях до файлу із списком акаунтів
+* ­Account (string) ­ одна цільова email­адреса
+3. Визначення часу життя вкладень (не обов’язково). <br>
+* ­TimeToLive (integer) ­ За замовчуванням: 360 днів
+4. Визначення розміру порції (не обов’язково). <br>
+* ­Limit (integer) ­ За замовчуванням: 1000
+5. Визначення директорії для лог­файлів (не обов’язково). <br>
+* ­LogDir (string) ­ За замовчуванням: “.\logs”
+6. Визначення режиму роботи (не обов’язково). <br>
+* ­DebugMode (flag) ­ За замовчуванням відсутній
